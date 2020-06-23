@@ -15,9 +15,9 @@ from matplotlib import colors
 
 mpl.rcParams['figure.dpi'] = 300
 #path = str(argv[1])
-path='/home/tusnin/Documents/C_LLE/data/'
+path='/home/tusnin/Documents/Projects/CLLE/data/'
 Nphi = 2**9
-Ndet = 400
+Ndet = 4000
 dir_name = '../'#'det_1.88_ndet_3000_f2_9_T_0.1_1e-4_1_2_pi2_045_J-9/'
 path+=dir_name
 Field = np.fromfile(path+'Field.bin', dtype=complex)
@@ -36,7 +36,7 @@ plt.show()
 Power = np.zeros(detuning.size)
 i_det = np.arange(0,detuning.size)
 
-Power[i_det] = np.linalg.norm(Field[:,i_det],axis=1)
+Power[i_det] = np.linalg.norm(Field[i_det,:],axis=1)
 
 
 fig2 = plt.figure(figsize=[3.6*2/3,2.2],frameon=False)
