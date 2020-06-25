@@ -11,20 +11,16 @@
 
 #include "./../NR/NR_C301/code/nr3.h"
 #include "./../NR/NR_C301/code/stepper.h"
-#include "./../NR/NR_C301/code/stepperdopr5.h"
 #include "./../NR/NR_C301/code/stepperdopr853.h"
-#include "./../NR/NR_C301/code/stepperbs.h"
 #include "./../NR/NR_C301/code/odeint.h"
 
 
 #define PBSTR "||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||"
 #define PBWIDTH 60
-
-struct rhs_lle{
+struct rhs_lle_pseud_spectral{
     Int Nphi;
     Doub det, f, d2, dphi;
     double* Dint;
-    double* Disp;
     Complex i=1i;
     fftw_plan plan_direct_2_spectrum;
     fftw_plan plan_spectrum_2_direct;
@@ -34,16 +30,72 @@ struct rhs_lle{
     fftw_complex *buf_disp_direct;
     fftw_complex *buf_disp_spectrum;
 
+    rhs_lle_pseud_spectral(Int Nphii, const double* Dinti, Doub deti, Doub fi, Doub d2i, Doub dphii)
+    {
+        Nphi = Nphii;
+        buf_direct = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * Nphi);
+        buf_spectrum = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * Nphi);
+        buf_disp_direct = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * Nphi);
+        buf_disp_spectrum = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * Nphi);
+        plan_direct_2_spectrum = fftw_plan_dft_1d(Nphi, buf_direct,buf_spectrum, FFTW_BACKWARD, FFTW_ESTIMATE);
+        plan_spectrum_2_direct = fftw_plan_dft_1d(Nphi, buf_spectrum,buf_direct, FFTW_FORWARD, FFTW_ESTIMATE);
+        plan_disp_spectrum_2_direct = fftw_plan_dft_1d(Nphi, buf_disp_spectrum,buf_disp_direct, FFTW_FORWARD, FFTW_ESTIMATE);
+        det = deti;
+        f = fi;
+        d2 = d2i;
+        dphi = dphii;
+        Dint = new (std::nothrow) double[Nphi];
+        for (int i_phi = 0; i_phi<Nphi; i_phi++){
+            Dint[i_phi] = Dinti[i_phi];
+        }
+    }
+    ~rhs_lle_pseud_spectral()
+    {
+        delete [] Dint;
+        free (buf_direct);
+        free (buf_spectrum);
+        free (buf_disp_direct);
+        free (buf_disp_spectrum);
+        fftw_destroy_plan(plan_direct_2_spectrum);
+        fftw_destroy_plan(plan_spectrum_2_direct);
+        fftw_destroy_plan(plan_disp_spectrum_2_direct);
+    }
+    void operator() (const Doub x, VecDoub &y, VecDoub &dydx) {
+        for (int i_phi = 0; i_phi<Nphi; i_phi++){
+            buf_direct[i_phi][0] = y[i_phi];
+            buf_direct[i_phi][1] = y[i_phi+Nphi];
+        }
+
+        fftw_execute(plan_direct_2_spectrum);
+        
+        for (int i_phi = 0; i_phi<Nphi; i_phi++){
+            buf_disp_spectrum[i_phi][0] = -Dint[i_phi]*buf_spectrum[i_phi][0];
+            buf_disp_spectrum[i_phi][1] = -Dint[i_phi]*buf_spectrum[i_phi][1];
+        }
+        fftw_execute(plan_disp_spectrum_2_direct);
+        
+        
+        for (int i_phi = 0; i_phi<Nphi; i_phi++){
+
+            dydx[i_phi] = -y[i_phi] + det*y[i_phi+Nphi]  - buf_disp_direct[i_phi][1]/Nphi - (y[i_phi]*y[i_phi]+y[i_phi+Nphi]*y[i_phi+Nphi])*y[i_phi+Nphi] + f;
+            dydx[i_phi+Nphi] = -y[i_phi+Nphi] - det*y[i_phi]  + buf_disp_direct[i_phi][0]/Nphi + (y[i_phi]*y[i_phi]+y[i_phi+Nphi]*y[i_phi+Nphi])*y[i_phi];
+
+        }
+    }
+
+
+};
+
+struct rhs_lle{
+    Int Nphi;
+    Doub det, f, d2, dphi;
+    double* Dint;
+    double* Disp;
+    Complex i=1i;
+
     rhs_lle(Int Nphii, const double* Dinti, Doub deti, Doub fi, Doub d2i, Doub dphii)
     {
         Nphi = Nphii;
-        //buf_direct = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * Nphi);
-        //buf_spectrum = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * Nphi);
-        //buf_disp_direct = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * Nphi);
-        //buf_disp_spectrum = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * Nphi);
-        //plan_direct_2_spectrum = fftw_plan_dft_1d(Nphi, buf_direct,buf_spectrum, FFTW_BACKWARD, FFTW_PATIENT);
-        //plan_spectrum_2_direct = fftw_plan_dft_1d(Nphi, buf_spectrum,buf_direct, FFTW_FORWARD, FFTW_PATIENT);
-        //plan_disp_spectrum_2_direct = fftw_plan_dft_1d(Nphi, buf_disp_spectrum,buf_disp_direct, FFTW_FORWARD, FFTW_PATIENT);
         det = deti;
         f = fi;
         d2 = d2i;
@@ -53,6 +105,11 @@ struct rhs_lle{
         for (int i_phi = 0; i_phi<Nphi; i_phi++){
             Dint[i_phi] = Dinti[i_phi];
         }
+    }
+    ~rhs_lle()
+    {
+        delete [] Dint;
+        delete [] Disp;
     }
     void operator() (const Doub x, VecDoub &y, VecDoub &dydx) {
         
@@ -131,7 +188,6 @@ std::complex<double>* WhiteNoise(const double amp, const int Nphi)
 }
 
 std::complex<double>** PropagateDOPRI(const double f,  const double *detuning, const double J, const double *phi, const double* Dint, const int Ndet, const int Nt, const double dt,  int Nphi, double noise_amp){
-    std::complex<double> i=1i;
     std::complex<double> **res = new (std::nothrow) std::complex<double>*[Ndet];
     VecDoub res_buf(2*Nphi);
     const Doub atol = 1e-9, rtol=atol, dtmin=0.0, t0=0.,t1=dt*(Nt-1);
@@ -150,11 +206,13 @@ std::complex<double>** PropagateDOPRI(const double f,  const double *detuning, c
 
     }
     Output out; 
-    rhs_lle lle(Nphi, Dint, detuning[0],f,Dint[1],std::abs(phi[1]-phi[0]));
+    //rhs_lle lle(Nphi, Dint, detuning[0],f,Dint[1],std::abs(phi[1]-phi[0]));
+    rhs_lle_pseud_spectral lle(Nphi, Dint, detuning[0],f,Dint[1],std::abs(phi[1]-phi[0]));
     for (int i_det=0; i_det<Ndet; i_det++){
         lle.det = detuning[i_det];
         noise=WhiteNoise(noise_amp,Nphi);
-        Odeint<StepperDopr853<rhs_lle> > ode(res_buf,t0,t1,atol,rtol,dt,dtmin,out,lle);
+        //Odeint<StepperDopr853<rhs_lle> > ode(res_buf,t0,t1,atol,rtol,dt,dtmin,out,lle);
+        Odeint<StepperDopr853<rhs_lle_pseud_spectral> > ode(res_buf,t0,t1,atol,rtol,dt,dtmin,out,lle);
         ode.integrate();
         for (int i_phi=0; i_phi<Nphi; i_phi++){
             res[i_det][i_phi].real(res_buf[i_phi]);
@@ -264,12 +322,12 @@ int main(int argc, char* argv[])
 {
     double det_min = -8.0;
     double det_max = 20.0;
-    const int Ndet = 4000;
+    const int Ndet = 400;
     double delta_det = (det_max-det_min)/(Ndet-1);
     double f = sqrt(14.1);
     double *detuning = new (std::nothrow) double[Ndet];
     for (int i = 0; i<Ndet; i++) detuning[i] = det_min+i*delta_det;
-    double Tmax = 10.;
+    double Tmax = 1.;
     double dt=0.5e-3;
     int Nt = int(Tmax/dt)+1;
     const int Nphi = pow(2,9);

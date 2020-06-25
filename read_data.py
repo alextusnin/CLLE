@@ -17,7 +17,7 @@ mpl.rcParams['figure.dpi'] = 300
 #path = str(argv[1])
 path='/home/tusnin/Documents/Projects/CLLE/data/'
 Nphi = 2**9
-Ndet = 4000
+Ndet = 400          
 dir_name = '../'#'det_1.88_ndet_3000_f2_9_T_0.1_1e-4_1_2_pi2_045_J-9/'
 path+=dir_name
 Field = np.fromfile(path+'Field.bin', dtype=complex)
